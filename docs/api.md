@@ -30,9 +30,10 @@ independently. Saved connections are shared (SQLite).
 | GET    | `/api/dashboards`           | `?workspace=`                          | List a workspace's dashboards (no payload): `{dashboards:[{name, connection, updated_at}]}`, ordered by name. |
 | GET    | `/api/dashboards/{name}`    | `?workspace=`                          | A saved dashboard `{name, connection, html, queries}` (`queries` parsed to a dict), or `404 {error:"not found"}`. |
 
-**MCP:** a FastMCP server is mounted at `/mcp` (Streamable HTTP) exposing
-`push_query` (push SQL to a session's query panel) and `upsert_dashboard`
-(persist a dashboard and push it to a session). Both delegate to the in-process
+**MCP:** a FastMCP server is mounted at `/mcp/` (Streamable HTTP) exposing
+`push_query` (push SQL to a session's query panel), `push_dashboard` (push a
+dashboard draft to a session), `run_query`, `list_queries` / `list_dashboards`
+and `git_store` / `git_history` / `git_restore`. They delegate to the in-process
 hubs the matching REST endpoints call. See [remote.md](./remote.md) and
 [dashboard.md](./dashboard.md).
 

@@ -22,7 +22,9 @@ docker run -p 8000:8000 ghcr.io/kolodkin/queryview:latest
 ```
 
 To serve on a different host port, remap it (the container keeps listening on
-8000, which its healthcheck probes): `docker run -p 9000:8000 ...`.
+8000, which its healthcheck probes): `docker run -p 9000:8000 ...`. QueryView
+expects to be reached from localhost only, so prefer binding the published port
+to loopback: `docker run -p 127.0.0.1:8000:8000 ...`.
 
 State (the SQLite DB and its encryption key) lives in `/home/queryview`; mount a
 volume there to persist it across containers:
@@ -130,13 +132,32 @@ An installed wheel serves the bundled UI by default — see
 ## MCP server
 
 The backend mounts a FastMCP server (Streamable HTTP) at
-`http://localhost:8000/mcp`. There is nothing extra to start — it runs inside
-the server process (`uvx queryview`, `npm run dev`, ...). Hook up an MCP client,
-e.g.:
+`http://localhost:8000/mcp/`. There is nothing extra to start — it runs inside
+the server process (`uvx queryview`, `npm run dev`, ...). Registering the client
+is a separate, one-time step on the machine running the agent: an HTTP MCP
+server can't install itself into someone else's client.
 
 ```bash
-claude mcp add --transport http queryview http://localhost:8000/mcp
+claude mcp add --transport http queryview http://localhost:8000/mcp/
 ```
+
+Three things to get right:
+
+- **Keep the trailing slash.** The mount serves `/mcp/`; a POST to `/mcp` is a
+  `405`, not a redirect, so a slashless registration fails on every call.
+- **Match the port.** The URL must point at the port QueryView actually
+  listens on — `--port 9000` means `http://localhost:9000/mcp/`, and
+  `docker run -p 9000:8000` means the *host* port, `9000`, not the container's
+  `8000`.
+- **Start QueryView first.** The client dials this URL when it starts; if
+  nothing is listening it reports a connection error and stays failed until you
+  reconnect it.
+
+QueryView is a **local, single-user tool**: it assumes it is reachable only from
+localhost. `/mcp/` is unauthenticated, and its tools can query every configured
+connection and rewrite workspace git state, so don't publish the port. Bind the
+container to loopback — `docker run -p 127.0.0.1:8000:8000 ...` — since a plain
+`-p 8000:8000` listens on all interfaces.
 
 Tools: `run_query` (read-only SQL, rows returned to the agent), `push_query`
 and `push_dashboard` (fill a live browser session), `list_queries` /
