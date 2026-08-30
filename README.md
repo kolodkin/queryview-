@@ -183,9 +183,3 @@ on macOS, `%LOCALAPPDATA%\queryview\` on Windows — overridable with `DB_PATH`.
 Alongside it the backend writes a local password-encryption key
 (`<db>.key`, override with `DB_KEY_PATH`) and the workspace git-sync clones
 (`<db>.gitsync/`, override with `GIT_SYNC_DIR`).
-
-> **Upgrading from a release before this change:** the default used to be
-> package-relative, so an installed wheel kept its DB inside site-packages
-> (under `uvx`, inside uv's cache). Nothing is migrated automatically — point
-> `DB_PATH` at the old file, or move it to the new location, to keep saved
-> connections, queries and dashboards.
