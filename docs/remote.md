@@ -20,8 +20,9 @@ pushes to its id are then reported as not delivered.
 
 The server runs inside the backend process — nothing extra to start — but the
 client registration is a separate one-time step: point it at
-`http://localhost:8000/mcp/` (trailing slash required; match the port QueryView
-listens on, and start it first). See [the README](../README.md#mcp-server).
+`http://localhost:8000/mcp/` (the slashless `/mcp` redirects there; match the
+port QueryView listens on, and start it first). See
+[the README](../README.md#mcp-server).
 
 ## MCP tools
 

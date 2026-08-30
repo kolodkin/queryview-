@@ -143,8 +143,9 @@ claude mcp add --transport http queryview http://localhost:8000/mcp/
 
 Three things to get right:
 
-- **Keep the trailing slash.** The mount serves `/mcp/`; a POST to `/mcp` is a
-  `405`, not a redirect, so a slashless registration fails on every call.
+- **Prefer the trailing slash.** The mount serves `/mcp/`. The slashless
+  `/mcp` also works — it 307-redirects — but registering the canonical path
+  skips a round trip on every call.
 - **Match the port.** The URL must point at the port QueryView actually
   listens on — `--port 9000` means `http://localhost:9000/mcp/`, and
   `docker run -p 9000:8000` means the *host* port, `9000`, not the container's

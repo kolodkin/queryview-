@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 
 from . import gitsync, remote, workspaces, yamlio
 from .connect import (
@@ -98,6 +104,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="queryview-backend", lifespan=lifespan)
 app.mount("/mcp", mcp.streamable_http_app())
+
+
+# Starlette would redirect the slashless mount path to /mcp/ by itself, but the
+# GET-only catch-all at the bottom of this module matches "/mcp" on path and
+# fails only on method — a *partial* match, which suppresses the redirect and
+# answers 405 instead, pointing clients at a path the MCP server never serves.
+# Redirect explicitly so a client registered with the natural URL still works.
+# 307 preserves the method and body; Streamable HTTP needs POST (messages), GET
+# (the SSE stream) and DELETE (session termination).
+@app.api_route("/mcp", methods=["GET", "POST", "DELETE"], include_in_schema=False)
+async def mcp_slash_redirect() -> RedirectResponse:
+    return RedirectResponse("/mcp/", status_code=307)
 
 
 @app.middleware("http")
