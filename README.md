@@ -22,7 +22,9 @@ docker run -p 8000:8000 ghcr.io/kolodkin/queryview:latest
 ```
 
 To serve on a different host port, remap it (the container keeps listening on
-8000, which its healthcheck probes): `docker run -p 9000:8000 ...`.
+8000, which its healthcheck probes): `docker run -p 9000:8000 ...`. QueryView
+expects to be reached from localhost only, so prefer binding the published port
+to loopback: `docker run -p 127.0.0.1:8000:8000 ...`.
 
 State (the SQLite DB and its encryption key) lives in `/home/queryview`; mount a
 volume there to persist it across containers:
@@ -130,13 +132,33 @@ An installed wheel serves the bundled UI by default — see
 ## MCP server
 
 The backend mounts a FastMCP server (Streamable HTTP) at
-`http://localhost:8000/mcp`. There is nothing extra to start — it runs inside
-the server process (`uvx queryview`, `npm run dev`, ...). Hook up an MCP client,
-e.g.:
+`http://localhost:8000/mcp/`. There is nothing extra to start — it runs inside
+the server process (`uvx queryview`, `npm run dev`, ...). Registering the client
+is a separate, one-time step on the machine running the agent: an HTTP MCP
+server can't install itself into someone else's client.
 
 ```bash
-claude mcp add --transport http queryview http://localhost:8000/mcp
+claude mcp add --transport http queryview http://localhost:8000/mcp/
 ```
+
+Three things to get right:
+
+- **Prefer the trailing slash.** The mount serves `/mcp/`. The slashless
+  `/mcp` also works — it 307-redirects — but registering the canonical path
+  skips a round trip on every call.
+- **Match the port.** The URL must point at the port QueryView actually
+  listens on — `--port 9000` means `http://localhost:9000/mcp/`, and
+  `docker run -p 9000:8000` means the *host* port, `9000`, not the container's
+  `8000`.
+- **Start QueryView first.** The client dials this URL when it starts; if
+  nothing is listening it reports a connection error and stays failed until you
+  reconnect it.
+
+QueryView is a **local, single-user tool**: it assumes it is reachable only from
+localhost. `/mcp/` is unauthenticated, and its tools can query every configured
+connection and rewrite workspace git state, so don't publish the port. Bind the
+container to loopback — `docker run -p 127.0.0.1:8000:8000 ...` — since a plain
+`-p 8000:8000` listens on all interfaces.
 
 Tools: `run_query` (read-only SQL, rows returned to the agent), `push_query`
 and `push_dashboard` (fill a live browser session), `list_queries` /
@@ -154,6 +176,10 @@ The single-page prompt UI is described in [docs/queryview.md](docs/queryview.md)
 connecting (`new <type>` / `connect <name>`), SQLite persistence, and session
 auto-connect are specified in [docs/connect.md](docs/connect.md).
 
-Connections are stored in SQLite (`backend/queryview.db`, override with
-`DB_PATH`); the backend writes that file and a local password-encryption key
-(`backend/queryview.db.key`, override with `DB_KEY_PATH`).
+Connections are stored in SQLite. The default location is the platform's
+user-data directory — `$XDG_DATA_HOME/queryview/queryview.db` (i.e.
+`~/.local/share/queryview/`) on Linux, `~/Library/Application Support/queryview/`
+on macOS, `%LOCALAPPDATA%\queryview\` on Windows — overridable with `DB_PATH`.
+Alongside it the backend writes a local password-encryption key
+(`<db>.key`, override with `DB_KEY_PATH`) and the workspace git-sync clones
+(`<db>.gitsync/`, override with `GIT_SYNC_DIR`).

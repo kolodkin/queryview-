@@ -16,9 +16,17 @@ session's **id** and a copyable command, e.g.:
 Turning the toggle off (or closing the tab) disarms the session immediately —
 pushes to its id are then reported as not delivered.
 
+## Connecting a client
+
+The server runs inside the backend process — nothing extra to start — but the
+client registration is a separate one-time step: point it at
+`http://localhost:8000/mcp/` (the slashless `/mcp` redirects there; match the
+port QueryView listens on, and start it first). See
+[the README](../README.md#mcp-server).
+
 ## MCP tools
 
-The backend mounts a FastMCP server (Streamable HTTP) at `/mcp` exposing four
+The backend mounts a FastMCP server (Streamable HTTP) at `/mcp/` exposing four
 tools:
 
 - `push_query(session_id, query, limit?=100, offset?=0, order_by?, fields?, cell_view?, name?)` —

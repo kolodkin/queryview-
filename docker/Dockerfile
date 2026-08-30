@@ -18,9 +18,10 @@ RUN useradd --create-home --uid 1000 queryview
 WORKDIR /home/queryview
 USER queryview
 
-# The default DB path sits inside site-packages, which the non-root user can't
-# write; keep the SQLite file (and its sibling .key file) in the home dir so a
-# volume mounted at /home/queryview persists all state.
+# The default is the user-data dir (/home/queryview/.local/share/queryview);
+# pin the SQLite file (and its sibling .key file and git-sync clones) to the top
+# of the home dir instead, so a volume mounted at /home/queryview persists all
+# state at a flat, documented path.
 ENV DB_PATH=/home/queryview/queryview.db
 
 EXPOSE 8000
