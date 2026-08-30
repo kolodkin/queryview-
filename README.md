@@ -176,6 +176,16 @@ The single-page prompt UI is described in [docs/queryview.md](docs/queryview.md)
 connecting (`new <type>` / `connect <name>`), SQLite persistence, and session
 auto-connect are specified in [docs/connect.md](docs/connect.md).
 
-Connections are stored in SQLite (`backend/queryview.db`, override with
-`DB_PATH`); the backend writes that file and a local password-encryption key
-(`backend/queryview.db.key`, override with `DB_KEY_PATH`).
+Connections are stored in SQLite. The default location is the platform's
+user-data directory — `$XDG_DATA_HOME/queryview/queryview.db` (i.e.
+`~/.local/share/queryview/`) on Linux, `~/Library/Application Support/queryview/`
+on macOS, `%LOCALAPPDATA%\queryview\` on Windows — overridable with `DB_PATH`.
+Alongside it the backend writes a local password-encryption key
+(`<db>.key`, override with `DB_KEY_PATH`) and the workspace git-sync clones
+(`<db>.gitsync/`, override with `GIT_SYNC_DIR`).
+
+> **Upgrading from a release before this change:** the default used to be
+> package-relative, so an installed wheel kept its DB inside site-packages
+> (under `uvx`, inside uv's cache). Nothing is migrated automatically — point
+> `DB_PATH` at the old file, or move it to the new location, to keep saved
+> connections, queries and dashboards.

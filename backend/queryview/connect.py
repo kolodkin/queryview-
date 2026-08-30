@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
+import platformdirs
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import Field, SQLModel, col, select
@@ -40,10 +41,14 @@ class Connection(SQLModel, table=True):
 
 
 def _db_path() -> Path:
+    """The SQLite store's path: DB_PATH, else the platform's user-data dir
+    (`$XDG_DATA_HOME/queryview` on Linux, `Application Support` on macOS,
+    `%LOCALAPPDATA%` on Windows). Deliberately not package-relative — that put
+    the DB in site-packages, which is uv's disposable cache under `uvx`."""
     env = os.environ.get("DB_PATH")
     if env:
         return Path(env)
-    return Path(__file__).resolve().parent.parent / "queryview.db"
+    return Path(platformdirs.user_data_dir("queryview")) / "queryview.db"
 
 
 _engine = None
@@ -80,6 +85,9 @@ async def _ensure_schema() -> None:
         return
     from alembic import command
 
+    # SQLite won't create a missing parent, and the user-data dir doesn't exist
+    # on a fresh install; the key file and git-sync clones land here too.
+    _db_path().parent.mkdir(parents=True, exist_ok=True)
     command.upgrade(_alembic_config(), "head")
     _schema_ready = True
 
