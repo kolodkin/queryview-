@@ -9,11 +9,12 @@ import {
   useNavigate,
 } from 'react-router-dom'
 
-import QueryView, { isReady, type Connection, type QueryPush } from './QueryView'
+import { isReady, type Connection } from './connection'
+import QueryView, { type QueryPush } from './QueryView'
 import DashboardView, { type DashboardPush } from './DashboardView'
 import ExplorerView from './ExplorerView'
-import { Toast } from './Toast'
-import WorkspaceSwitcher from './WorkspaceSwitcher'
+import { Toast } from './controls/Toast'
+import WorkspaceSwitcher from './controls/WorkspaceSwitcher'
 import { activeWorkspace, setActiveWorkspace } from './workspace'
 
 // App shell: routing, shared connection state, the connection pill + agent
