@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
-import { FieldPickers, type Field, type OrderCol } from './FieldPickers'
-import { isReady, type Connection } from './QueryView'
-import { ResultsTable } from './ResultsTable'
-import { shownColumnIndices } from './presentation'
+import {
+  FieldPickers,
+  ResultsTable,
+  parseTsv,
+  shownColumnIndices,
+  type Field,
+  type OrderCol,
+} from '../core'
+import { isReady, type Connection } from './connection'
 import { formatBytes, formatCompact } from './compactNumber'
-import { parseTsv } from './tsv'
 
 // Sidebar entry from /api/db/tables. rows/bytes are engine estimates — null
 // when the engine doesn't track them (views, never-analyzed Postgres tables);

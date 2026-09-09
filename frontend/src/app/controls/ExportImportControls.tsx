@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
-import { downloadText, fetchExport, importYaml, type ExportKind } from './yamlio'
-import { activeWorkspace } from './workspace'
+import { downloadText, fetchExport, importYaml, type ExportKind } from '../yamlio'
+import { activeWorkspace } from '../workspace'
 
 type Props = {
   kind: ExportKind

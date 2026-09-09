@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import ExportImportControls from './ExportImportControls'
-import { invalidateGitStatus } from './gitsync'
+import { invalidateGitStatus } from '../gitsync'
 import {
   createWorkspace,
   deleteWorkspace,
   listWorkspaces,
   updateWorkspace,
   type Workspace,
-} from './workspace'
+} from '../workspace'
 
 type Props = {
   workspace: string

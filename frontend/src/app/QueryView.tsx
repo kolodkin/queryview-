@@ -1,46 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { CellViewModal } from './CellViewModal'
-import { ComplexCell } from './ComplexCell'
-import { FieldPickers, type Field, type OrderCol } from './FieldPickers'
-import { ResultsTable } from './ResultsTable'
-import { shownColumnIndices } from './presentation'
-import { parseTsv } from './tsv'
+import {
+  CellViewModal,
+  FieldPickers,
+  ResultsTable,
+  applyParams,
+  parseCellViewYaml,
+  parseQueryParams,
+  parseTsv,
+  presentationForSave,
+  renderCell,
+  shownColumnIndices,
+  type CellViewMap,
+  type Field,
+  type OrderCol,
+  type ParamDef,
+  type ParamSpec,
+} from '../core'
+import { isReady, type Connection } from './connection'
 import { DRIVERS, type DriverMeta } from './drivers'
-import ExportImportControls from './ExportImportControls'
-import GitSyncControls from './GitSyncControls'
+import ExportImportControls from './controls/ExportImportControls'
+import GitSyncControls from './controls/GitSyncControls'
 import { downloadText } from './yamlio'
 import { activeWorkspace } from './workspace'
 import { suggestCompletions, type Suggestion } from './promptSuggestions'
-import { escapeHtml, substituteCellTemplate } from './cellView'
 import { postLock } from './sessionLock'
-import { presentationForSave } from './presentation'
-import { parseComplexType } from './complexCellParsing'
-import {
-  applyParams,
-  parseQueryParams,
-  parseYamlObject,
-  type ParamDef,
-  type ParamSpec,
-} from './queryParams'
 
 type TestResult = { ok: boolean; message: string }
-
-export type Connection = {
-  name: string
-  type: string
-  databases: string[]
-  database: string | null
-}
-
-// Ready to query when a database is selected, or the driver has no picker
-// (empty databases, e.g. DuckDB) so there's nothing to select.
-export function isReady(connection: Connection | null): boolean {
-  return (
-    !!connection && (connection.database !== null || connection.databases.length === 0)
-  )
-}
 
 type PredefinedQuery = {
   query_name: string
@@ -49,9 +36,6 @@ type PredefinedQuery = {
   order_by: OrderCol[] | null
   fields: string[] | null
 }
-
-type CellView = { type: string; value: string }
-type CellViewMap = Record<string, CellView>
 
 export type QueryPush = {
   query: string
@@ -631,78 +615,6 @@ function firstColumn(text: string): string[] {
   const lines = text.split('\n')
   if (lines[lines.length - 1] === '') lines.pop()
   return lines.slice(1).map((l) => l.split('\t')[0])
-}
-
-// Parse the saved cell_view YAML into a map. A parse error or entry without
-// string {type, value} is dropped — broken config falls through to plain text
-// rather than blanking the table.
-function parseCellViewYaml(text: string | null | undefined): CellViewMap {
-  const doc = parseYamlObject(text)
-  if (!doc) return {}
-  const out: CellViewMap = {}
-  for (const [k, v] of Object.entries(doc)) {
-    // `params` is reserved for query-parameter dropdowns (see queryParams.ts).
-    if (k === 'params') continue
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      const o = v as Record<string, unknown>
-      if (typeof o.type === 'string' && typeof o.value === 'string') {
-        out[k] = { type: o.type, value: o.value }
-      }
-    }
-  }
-  return out
-}
-
-function renderCell(
-  colName: string,
-  raw: string,
-  views: CellViewMap,
-  row: string[],
-  columns: string[],
-  colTypes: Record<string, string>,
-): React.ReactNode {
-  const view = views[colName]
-  // An explicit cell_view entry wins (and is the opt-out from a default view).
-  if (!view) {
-    const complex = parseComplexType(colTypes[colName] ?? '')
-    if (complex) return <ComplexCell type={complex} raw={raw} col={colName} />
-    return raw
-  }
-  const testid = `cell-${colName}`
-  if (view.type === 'link') {
-    const href = substituteCellTemplate(
-      view.value,
-      raw,
-      row,
-      columns,
-      encodeURIComponent,
-    )
-    let scheme: string
-    try {
-      scheme = new URL(href).protocol
-    } catch {
-      return raw
-    }
-    if (scheme !== 'http:' && scheme !== 'https:') return raw
-    return (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        data-testid={testid}
-        className="text-indigo-300 underline hover:text-indigo-200"
-      >
-        {raw}
-      </a>
-    )
-  }
-  if (view.type === 'custom') {
-    const html = substituteCellTemplate(view.value, raw, row, columns, escapeHtml)
-    // Cell value is HTML-escaped above so DB content is inert; template HTML is
-    // trusted (whoever saves a predefined query can inject markup — see docs/query.md).
-    return <span data-testid={testid} dangerouslySetInnerHTML={{ __html: html }} />
-  }
-  return raw
 }
 
 function QueryPanel({

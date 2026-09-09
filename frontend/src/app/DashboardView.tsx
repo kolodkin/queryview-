@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
-import ExportImportControls from './ExportImportControls'
-import GitSyncControls from './GitSyncControls'
+import { DashboardFrame, type DashboardResults } from '../core'
+import ExportImportControls from './controls/ExportImportControls'
+import GitSyncControls from './controls/GitSyncControls'
 import { activeWorkspace } from './workspace'
 
 export type DashboardPush = {
@@ -13,17 +14,6 @@ export type DashboardPush = {
 }
 
 type DashboardSummary = { name: string; connection: string; updated_at: number }
-
-// Column-oriented results map: {query_name: {column_name: values[]}}.
-type Results = Record<string, Record<string, unknown[]>>
-
-// Build the iframe document: a prologue exposing results as `window.queries`,
-// then the agent-authored HTML. JSON `<` is escaped so an embedded `</script>`
-// in result data can't break out of the prologue script.
-function buildSrcDoc(html: string, results: Results): string {
-  const safeJson = JSON.stringify(results).replace(/</g, '\\u003c')
-  return `<script>window.queries = ${safeJson};</script>\n${html}`
-}
 
 // The dashboard page (`/dashboard?name=x`). Picks a saved dashboard (dropdown or
 // `?name=`), runs its queries via /api/runqueries, and renders the agent HTML in
@@ -46,7 +36,7 @@ function DashboardView({
   // Captured locally so consuming the shell push doesn't re-trigger resolve.
   const [localPush, setLocalPush] = useState<DashboardPush | null>(null)
   const [active, setActive] = useState<DashboardPush | null>(null)
-  const [results, setResults] = useState<Results | null>(null)
+  const [results, setResults] = useState<DashboardResults | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -165,7 +155,7 @@ function DashboardView({
           if (!cancelled) setError(data.message ?? 'Failed to run queries.')
           return
         }
-        if (!cancelled) setResults((data.results ?? {}) as Results)
+        if (!cancelled) setResults((data.results ?? {}) as DashboardResults)
       } catch {
         if (!cancelled) setError('Failed to run queries.')
       } finally {
@@ -178,11 +168,6 @@ function DashboardView({
       cancelled = true
     }
   }, [name, localPush, database, reloadNonce])
-
-  const srcDoc = useMemo(
-    () => (active && results ? buildSrcDoc(active.html, results) : null),
-    [active, results],
-  )
 
   return (
     <div className="w-full max-w-[80vw]" data-testid="dashboard-view">
@@ -259,21 +244,13 @@ function DashboardView({
         </p>
       )}
 
-      {name && !error && loading && !srcDoc && (
+      {name && !error && loading && !(active && results) && (
         <p className="text-center text-sm text-slate-400" data-testid="dashboard-loading">
           Running queries…
         </p>
       )}
 
-      {srcDoc && (
-        <iframe
-          title="dashboard"
-          data-testid="dashboard-frame"
-          sandbox="allow-scripts"
-          srcDoc={srcDoc}
-          className="h-[78vh] w-full rounded-xl border border-white/10 bg-white"
-        />
-      )}
+      {active && results && <DashboardFrame html={active.html} results={results} />}
     </div>
   )
 }
