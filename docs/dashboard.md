@@ -59,6 +59,9 @@ window.queries = {
 
 So for a query named `sales` selecting a `revenue` column,
 `window.queries.sales.revenue` is that column's values. Column order is preserved.
+Values are typed as the driver returns them: numbers are numbers, 64-bit
+integers and decimals are strings (so nothing rounds), and arrays, maps, and
+tuples are JSON arrays and objects.
 Load any chart library from a CDN inside the HTML. A minimal dashboard:
 
 ```html

@@ -41,7 +41,9 @@ tools:
   `query_name` back as `push_query`'s `name`.
 - `run_query(query, connection?="clickhouse", limit?=1000, offset?=0)` — run a
   read-only query and return rows to the agent (not the browser):
-  `{ok, connection, database, columns, rows}`. `database` is the connection's
+  `{ok, connection, database, columns, types, rows}` — values typed as the
+  driver returns them (64-bit integers and decimals as strings, collections as
+  JSON). `database` is the connection's
   currently-selected database
   (the user can change it from the pill), so the agent can tell what it's querying
   and whether to fully-qualify tables. For schema discovery / data inspection.

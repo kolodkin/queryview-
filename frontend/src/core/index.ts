@@ -3,7 +3,16 @@
 // or reads app state (enforced by eslint.config.js), so this folder is what
 // another app reuses. The app imports it only through this file.
 
-export { parseTsv } from './results/tsv'
+export {
+  EMPTY_ROWS,
+  cellText,
+  columnNames,
+  columnTypes,
+  isContainer,
+  type Cell,
+  type ColumnMeta,
+  type QueryRows,
+} from './results/rows'
 export { ResultsTable } from './results/ResultsTable'
 export { escapeHtml, substituteCellTemplate } from './cells/cellView'
 export { parseCellViewYaml, renderCell, type CellView, type CellViewMap } from './cells/cellViewYaml'
@@ -13,7 +22,7 @@ export {
   PREVIEW_COUNT,
   type CellItem,
   type ComplexType,
-} from './cells/complexCellParsing'
+} from './cells/complexCells'
 export { ComplexCell } from './cells/ComplexCell'
 export { CellViewModal } from './cells/CellViewModal'
 export {

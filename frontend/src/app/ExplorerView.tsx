@@ -4,10 +4,11 @@ import { useSearchParams } from 'react-router-dom'
 import {
   FieldPickers,
   ResultsTable,
-  parseTsv,
+  columnNames,
   shownColumnIndices,
   type Field,
   type OrderCol,
+  type QueryRows,
 } from '../core'
 import { isReady, type Connection } from './connection'
 import { formatBytes, formatCompact } from './compactNumber'
@@ -44,7 +45,7 @@ function ExplorerView({ connection }: { connection: Connection | null }) {
   const [orderBy, setOrderBy] = useState<OrderCol[]>([])
   const [limit, setLimit] = useState(100)
   const [offset, setOffset] = useState(0)
-  const [output, setOutput] = useState<string | null>(null)
+  const [result, setResult] = useState<QueryRows | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   // The limit the current output was fetched with, so a no-op blur of the
@@ -102,13 +103,12 @@ function ExplorerView({ connection }: { connection: Connection | null }) {
             query: sql,
             limit: lim,
             offset: off,
-            format: 'text',
             order_by: ord,
           }),
         })
         const data = await res.json()
         if (data.ok) {
-          setOutput(data.output as string)
+          setResult({ meta: data.meta ?? [], data: data.data ?? [] })
           setOffset(off)
           appliedLimit.current = lim
         } else {
@@ -131,7 +131,7 @@ function ExplorerView({ connection }: { connection: Connection | null }) {
     const sql = selected.query
     let cancelled = false
     /* eslint-disable react-hooks/set-state-in-effect */
-    setOutput(null)
+    setResult(null)
     setError(null)
     setFields([])
     setVisibleCols([])
@@ -178,8 +178,8 @@ function ExplorerView({ connection }: { connection: Connection | null }) {
   }
 
   const { columns, rows } = useMemo(
-    () => (output !== null ? parseTsv(output) : { columns: [], rows: [] }),
-    [output],
+    () => (result ? { columns: columnNames(result), rows: result.data } : { columns: [], rows: [] }),
+    [result],
   )
   const shownIdx = useMemo(
     () => shownColumnIndices(columns, fields, visibleCols),
@@ -309,7 +309,7 @@ function ExplorerView({ connection }: { connection: Connection | null }) {
               />
             )}
 
-            {output !== null && (
+            {result !== null && (
               <ResultsTable
                 columns={columns}
                 rows={rows}

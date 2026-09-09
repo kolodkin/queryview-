@@ -7,8 +7,10 @@ import {
   ResultsTable,
   applyParams,
   parseCellViewYaml,
+  cellText,
+  columnNames,
+  columnTypes,
   parseQueryParams,
-  parseTsv,
   presentationForSave,
   renderCell,
   shownColumnIndices,
@@ -17,6 +19,7 @@ import {
   type OrderCol,
   type ParamDef,
   type ParamSpec,
+  type QueryRows,
 } from '../core'
 import { isReady, type Connection } from './connection'
 import { DRIVERS, type DriverMeta } from './drivers'
@@ -608,13 +611,10 @@ function DatabasePicker({
   )
 }
 
-// First column of each data row in a TabSeparatedWithNames result — the dropdown
-// options for an `options_sql` param. Header and trailing empty line dropped, so
-// an empty result yields [].
-function firstColumn(text: string): string[] {
-  const lines = text.split('\n')
-  if (lines[lines.length - 1] === '') lines.pop()
-  return lines.slice(1).map((l) => l.split('\t')[0])
+// First column of each result row, as text — the dropdown options for an
+// `options_sql` param. An empty result yields [].
+function firstColumn(rows: QueryRows): string[] {
+  return rows.data.map((r) => cellText(r[0]))
 }
 
 function QueryPanel({
@@ -634,19 +634,17 @@ function QueryPanel({
   const [limit, setLimit] = useState(100)
   const [offset, setOffset] = useState(0)
   const [rows, setRows] = useState(4)
-  const [output, setOutput] = useState<string | null>(null)
+  const [result, setResult] = useState<QueryRows | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [predefined, setPredefined] = useState<PredefinedQuery[]>([])
   const [selectedName, setSelectedName] = useState('')
   const [fields, setFields] = useState<Field[]>([])
   const [visibleCols, setVisibleCols] = useState<string[]>([])
-  // Column → ClickHouse type, from an auto-DESCRIBE fired alongside each run.
-  // Drives the built-in default views; independent of the Fields picker so it
-  // never resets the user's column selection. Cached per resolved query text so
-  // pagination (same SQL) doesn't re-describe.
-  const [colTypes, setColTypes] = useState<Record<string, string>>({})
-  const colTypeCache = useRef<Map<string, Record<string, string>>>(new Map())
+  // Column → type from the result's own metadata. Drives the built-in default
+  // views; independent of the Fields picker so it never resets the user's
+  // column selection.
+  const colTypes = useMemo(() => (result ? columnTypes(result) : {}), [result])
   const [orderBy, setOrderBy] = useState<OrderCol[]>([])
   const [cellViewModalOpen, setCellViewModalOpen] = useState(false)
   // Transient "Copied" feedback for the copy-name button.
@@ -740,11 +738,11 @@ function QueryPanel({
             const res = await fetch('/api/db/query', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ query: s.optionsSql, format: 'text' }),
+              body: JSON.stringify({ query: s.optionsSql }),
             })
             const data = await res.json()
             if (!data.ok) return { name: s.name, error: data.message ?? 'query failed' }
-            const values = firstColumn(data.output as string)
+            const values = firstColumn(data as QueryRows)
             if (values.length === 0) return { name: s.name, error: 'query returned no rows' }
             return { name: s.name, values }
           } catch (e) {
@@ -881,33 +879,6 @@ function QueryPanel({
     }
   }
 
-  // Populate `colTypes` for a resolved query via DESCRIBE. Fired in parallel
-  // with the query so results never wait on it; a failure leaves types empty so
-  // cells fall back to raw rendering. Cached by query text.
-  async function loadColTypes(query: string) {
-    const cached = colTypeCache.current.get(query)
-    if (cached) {
-      setColTypes(cached)
-      return
-    }
-    try {
-      const res = await fetch('/api/db/describe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
-      })
-      const data = await res.json()
-      const map: Record<string, string> = {}
-      if (data.ok) {
-        for (const f of (data.fields ?? []) as Field[]) map[f.name] = f.type
-        colTypeCache.current.set(query, map)
-      }
-      setColTypes(map)
-    } catch {
-      setColTypes({})
-    }
-  }
-
   async function runWith(
     q: string,
     lim: number,
@@ -925,19 +896,18 @@ function QueryPanel({
       const res = await fetch('/api/db/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit: lim, offset: off, format: 'text', order_by: ord }),
+        body: JSON.stringify({ query, limit: lim, offset: off, order_by: ord }),
       })
       const data = await res.json()
       if (data.ok) {
-        const text = data.output as string
-        setOutput(text)
+        const rows: QueryRows = { meta: data.meta ?? [], data: data.data ?? [] }
+        setResult(rows)
         setOffset(off)
-        void loadColTypes(query) // parallel; default views appear when it lands
         // A pushed selection is authoritative: synthesize the field list from the
         // result columns so the visibility filter restricts the table to exactly
         // the pushed columns (empty/absent => show all).
         if (selectFields !== undefined) {
-          const cols = parseTsv(text).columns
+          const cols = columnNames(rows)
           setFields(cols.map((name) => ({ name, type: '' })))
           setVisibleCols(
             selectFields.length ? selectFields.filter((f) => cols.includes(f)) : cols,
@@ -1075,8 +1045,8 @@ function QueryPanel({
     if (await save(value)) setCellViewModalOpen(false)
   }
 
-  const { columns, rows: resultRows } =
-    output !== null ? parseTsv(output) : { columns: [], rows: [] }
+  const columns = result ? columnNames(result) : []
+  const resultRows = result ? result.data : []
   const shownIdx = shownColumnIndices(columns, fields, visibleCols)
 
   const sizes: [string, number, string][] = [
@@ -1328,14 +1298,14 @@ function QueryPanel({
         />
       )}
 
-      {output !== null && (
+      {result !== null && (
         <ResultsTable
           columns={columns}
           rows={resultRows}
           shownIdx={shownIdx}
           testid="query-output"
-          renderCell={(col, raw, row) =>
-            renderCell(col, raw, appliedViews, row, columns, colTypes)
+          renderCell={(col, value, row) =>
+            renderCell(col, value, appliedViews, row, columns, colTypes)
           }
         />
       )}

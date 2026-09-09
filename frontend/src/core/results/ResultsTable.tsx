@@ -1,6 +1,8 @@
 // The results grid shared by the query panel and the explorer: a sticky-header
-// table over TSV-parsed rows, restricted to the visible columns (see
+// table over result rows, restricted to the visible columns (see
 // shownColumnIndices in presentation.ts).
+
+import { cellText, type Cell } from './rows'
 
 export function ResultsTable({
   columns,
@@ -10,11 +12,11 @@ export function ResultsTable({
   renderCell,
 }: {
   columns: string[]
-  rows: string[][]
+  rows: Cell[][]
   shownIdx: number[]
   testid: string
-  // Cell content; defaults to the raw text (the query panel plugs in cell views).
-  renderCell?: (col: string, raw: string, row: string[]) => React.ReactNode
+  // Cell content; defaults to plain text (the query panel plugs in cell views).
+  renderCell?: (col: string, value: Cell, row: Cell[]) => React.ReactNode
 }) {
   return (
     <div
@@ -42,7 +44,7 @@ export function ResultsTable({
                   key={j}
                   className="whitespace-pre border-b border-white/5 px-3 py-1 font-mono text-slate-200"
                 >
-                  {renderCell ? renderCell(columns[j], row[j], row) : row[j]}
+                  {renderCell ? renderCell(columns[j], row[j], row) : cellText(row[j])}
                 </td>
               ))}
             </tr>

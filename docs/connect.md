@@ -190,7 +190,7 @@ request gets a new session that auto-connects the latest active connection.
 | POST   | `/api/db/connect`     | `{type, name, …driver config}`         | `{ok, name, type, databases}` \| `{ok:false, message}`; saves + activates (`new <type>` form) |
 | POST   | `/api/db/open`        | `{name}`                               | `{ok, name, databases}` \| `{ok:false, message}`; opens a saved connection (`connect <name>`) |
 | POST   | `/api/db/database`    | `{database}`                           | `{ok}`; sets the session/connection database |
-| POST   | `/api/db/query`       | `{query, limit?, offset?, format?}`    | `{ok, output}` \| `{ok:false, message}`; paginated SQL against the session's selected database (`format:"csv"` for CSV) |
+| POST   | `/api/db/query`       | `{query, limit?, offset?, format?}`    | `{ok, meta, data}` \| `{ok:false, message}`; paginated SQL against the session's selected database (`format:"csv"` returns `{ok, output}` CSV text) |
 | GET    | `/api/predefined-queries`     | `?type=<connType>`                     | `{queries:[{query_name, query}]}`; global predefined queries by connection type |
 | POST   | `/api/predefined-queries`     | `{query_name, type, query}`            | `{ok}`; upserts a global predefined query |
 | GET    | `/api/session`                | —                                      | `{connected, name?, type?, databases?, database?}`; auto-connects latest active |

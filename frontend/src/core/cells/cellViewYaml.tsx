@@ -4,8 +4,9 @@
 
 import { ComplexCell } from './ComplexCell'
 import { escapeHtml, substituteCellTemplate } from './cellView'
-import { parseComplexType } from './complexCellParsing'
+import { parseComplexType } from './complexCells'
 import { parseYamlObject } from '../params/queryParams'
+import { cellText, isContainer, type Cell } from '../results/rows'
 
 export type CellView = { type: string; value: string }
 export type CellViewMap = Record<string, CellView>
@@ -32,9 +33,9 @@ export function parseCellViewYaml(text: string | null | undefined): CellViewMap 
 
 export function renderCell(
   colName: string,
-  raw: string,
+  value: Cell,
   views: CellViewMap,
-  row: string[],
+  row: Cell[],
   columns: string[],
   colTypes: Record<string, string>,
 ): React.ReactNode {
@@ -42,18 +43,14 @@ export function renderCell(
   // An explicit cell_view entry wins (and is the opt-out from a default view).
   if (!view) {
     const complex = parseComplexType(colTypes[colName] ?? '')
-    if (complex) return <ComplexCell type={complex} raw={raw} col={colName} />
-    return raw
+    if (complex || isContainer(value)) return <ComplexCell type={complex} value={value} col={colName} />
+    return cellText(value)
   }
+  const raw = cellText(value)
+  const rowText = row.map(cellText)
   const testid = `cell-${colName}`
   if (view.type === 'link') {
-    const href = substituteCellTemplate(
-      view.value,
-      raw,
-      row,
-      columns,
-      encodeURIComponent,
-    )
+    const href = substituteCellTemplate(view.value, raw, rowText, columns, encodeURIComponent)
     let scheme: string
     try {
       scheme = new URL(href).protocol
@@ -74,7 +71,7 @@ export function renderCell(
     )
   }
   if (view.type === 'custom') {
-    const html = substituteCellTemplate(view.value, raw, row, columns, escapeHtml)
+    const html = substituteCellTemplate(view.value, raw, rowText, columns, escapeHtml)
     // Cell value is HTML-escaped above so DB content is inert; template HTML is
     // trusted (whoever saves a predefined query can inject markup — see docs/query.md).
     return <span data-testid={testid} dangerouslySetInnerHTML={{ __html: html }} />
