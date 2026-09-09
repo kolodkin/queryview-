@@ -64,6 +64,11 @@ def _connect(page: Page, case: DriverCase, seed) -> None:
     if case.path_field:
         page.get_by_test_id(case.path_field).fill(seed)
     page.get_by_test_id(case.connect_testid).click()
+    # The status pill can already read "connected" from the session the shell
+    # auto-resumed on load (the previous test's saved connection), so wait for
+    # the form to close: only the connect response's handler dismisses it, and
+    # that same handler resets the prompt and hides the query panel.
+    expect(page.get_by_test_id(case.form_testid)).to_have_count(0)
     if case.db_option:
         expect(page.get_by_test_id("db-picker")).to_be_visible()
         page.locator(f'[data-db="{case.db_option}"]').click()
