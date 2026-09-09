@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from typing import Any, NamedTuple
 
 import httpx
 
-from .base import QueryResult, build_order_by, parse_host_port_config, wrap_paginated
+from .base import Column, QueryResult, QueryRows, TextResult, build_order_by, parse_host_port_config, wrap_paginated
 
 CH_TIMEOUT_SECONDS = 5.0
 
@@ -25,12 +26,30 @@ class ChResult(NamedTuple):
     value: str
 
 
-async def ch_query(c: ChConfig, query: str, database: str | None = None, fmt: str | None = None) -> ChResult:
+# JSONCompact output settings: values a JS number would mangle are quoted by
+# ClickHouse itself, and named tuples arrive as objects so the UI can label
+# their fields.
+JSON_COMPACT_SETTINGS = {
+    "output_format_json_quote_64bit_integers": "1",
+    "output_format_json_quote_decimals": "1",
+    "output_format_json_quote_denormals": "1",
+    "output_format_json_named_tuples_as_objects": "1",
+}
+
+
+async def ch_query(
+    c: ChConfig,
+    query: str,
+    database: str | None = None,
+    fmt: str | None = None,
+    settings: dict[str, str] | None = None,
+) -> ChResult:
     """Run a query against the ClickHouse HTTP interface (Basic auth, 5s timeout).
-    `database` scopes the query; `fmt` appends a ClickHouse `FORMAT` clause."""
+    `database` scopes the query; `fmt` appends a ClickHouse `FORMAT` clause;
+    `settings` are passed as URL parameters."""
     url = f"http://{c.host}:{c.port}/"
     q = f"{query}\nFORMAT {fmt}" if fmt else query
-    params = {"query": q}
+    params = {"query": q, **(settings or {})}
     if database:
         params["database"] = database
     try:
@@ -120,13 +139,33 @@ class ClickHouseDriver:
         limit: int,
         offset: int,
         order_by: list[dict[str, Any]] | None,
-        fmt: str,
     ) -> QueryResult:
         order_clause = build_order_by(order_by, "`")
         paginated = wrap_paginated(sql, order_clause, limit, offset, alias=None)
-        ch_fmt = "CSVWithNames" if fmt == "csv" else "TabSeparatedWithNames"
-        r = await ch_query(config, paginated, database=database, fmt=ch_fmt)
-        return QueryResult(r.ok, r.value)
+        r = await ch_query(config, paginated, database=database, fmt="JSONCompact", settings=JSON_COMPACT_SETTINGS)
+        if not r.ok:
+            return QueryResult(False, None, r.value)
+        try:
+            doc = json.loads(r.value)
+            meta = [Column(str(m["name"]), str(m["type"])) for m in doc["meta"]]
+            data = [list(row) for row in doc["data"]]
+        except (ValueError, KeyError, TypeError) as err:
+            return QueryResult(False, None, f"unexpected JSON from ClickHouse: {err}")
+        return QueryResult(True, QueryRows(meta, data))
+
+    async def export_csv(
+        self,
+        config: ChConfig,
+        sql: str,
+        database: str | None,
+        limit: int,
+        offset: int,
+        order_by: list[dict[str, Any]] | None,
+    ) -> TextResult:
+        order_clause = build_order_by(order_by, "`")
+        paginated = wrap_paginated(sql, order_clause, limit, offset, alias=None)
+        r = await ch_query(config, paginated, database=database, fmt="CSVWithNames")
+        return TextResult(r.ok, r.value)
 
     async def describe_query(
         self, config: ChConfig, sql: str, database: str | None

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { complexCellItems, PREVIEW_COUNT, type ComplexType } from './complexCellParsing'
+import { cellText, type Cell } from '../results/rows'
+import { complexCellItems, PREVIEW_COUNT, type ComplexType } from './complexCells'
 
 // Built-in default view for an Array/Map/Tuple result cell: a plain vertical
 // list of items, collapsed to the first PREVIEW_COUNT with an expander. See
@@ -7,17 +8,17 @@ import { complexCellItems, PREVIEW_COUNT, type ComplexType } from './complexCell
 // nodes (React-escaped), so DB content can't inject markup.
 export function ComplexCell({
   type,
-  raw,
+  value,
   col,
 }: {
-  type: ComplexType
-  raw: string
+  type: ComplexType | null
+  value: Cell
   col: string
 }) {
   const [expanded, setExpanded] = useState(false)
-  const items = complexCellItems(type, raw)
-  // Empty/unparseable value: fall back to the raw serialized text.
-  if (items.length === 0) return <span data-testid={`cell-${col}`}>{raw}</span>
+  const items = complexCellItems(type, value)
+  // Empty collection or scalar: fall back to the plain text.
+  if (items.length === 0) return <span data-testid={`cell-${col}`}>{cellText(value)}</span>
 
   const collapsible = items.length > PREVIEW_COUNT
   const shown = expanded ? items : items.slice(0, PREVIEW_COUNT)

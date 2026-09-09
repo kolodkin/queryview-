@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 
+from queryview.drivers.base import Column
 from queryview.drivers.postgres import PgConfig, PostgresDriver
 
 
@@ -42,12 +43,17 @@ def test_run_query_builds_aliased_double_quoted_sql(monkeypatch):
     monkeypatch.setattr("queryview.drivers.postgres._raw_connect", fake_connect)
     r = asyncio.run(
         d.run_query(
-            PgConfig("h", 5432, "u", ""), "SELECT name FROM t;", "mydb", 50, 10, [{"name": "name", "dir": "ASC"}], "tsv"
+            PgConfig("h", 5432, "u", ""), "SELECT name FROM t;", "mydb", 50, 10, [{"name": "name", "dir": "ASC"}]
         )
     )
-    assert r.ok and r.value == "name\nalpha"
+    assert r.ok and r.rows is not None
+    assert r.rows.meta == [Column("name", "text")]
+    assert r.rows.data == [["alpha"]]
     assert captured["database"] == "mydb"
     assert captured["sql"] == ('SELECT * FROM (\nSELECT name FROM t\n) AS _qv ORDER BY "name" ASC LIMIT 50 OFFSET 10')
+
+    csv = asyncio.run(d.export_csv(PgConfig("h", 5432, "u", ""), "SELECT name FROM t", "mydb", 50, 10, None))
+    assert csv.ok and csv.value == "name\nalpha"
 
 
 def test_list_tables_queries_public_schema_with_estimates(monkeypatch):

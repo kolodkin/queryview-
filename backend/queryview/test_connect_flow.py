@@ -7,7 +7,7 @@ import asyncio
 
 import queryview.connect as connect
 from queryview.drivers import DRIVERS
-from queryview.drivers.base import QueryResult
+from queryview.drivers.base import Column, QueryResult, QueryRows, TextResult
 
 
 def _run(coro):
@@ -34,8 +34,11 @@ class _FakeDriver:
     async def list_databases(self, c):
         return True, []  # no picker
 
-    async def run_query(self, c, sql, database, limit, offset, order_by, fmt):
-        return QueryResult(True, f"ran:{sql}:db={database}")
+    async def run_query(self, c, sql, database, limit, offset, order_by):
+        return QueryResult(True, QueryRows([Column("q", "String")], [[f"ran:{sql}:db={database}"]]))
+
+    async def export_csv(self, c, sql, database, limit, offset, order_by):
+        return TextResult(True, f"q\nran:{sql}:db={database}")
 
     async def describe_query(self, c, sql, database):
         return True, [{"name": "x", "type": "int"}]
@@ -48,8 +51,18 @@ def test_run_query_skips_db_gate_when_no_databases(monkeypatch):
     monkeypatch.setitem(DRIVERS, "fake", _FakeDriver())
     sid = "s-fake"
     _run(connect.connect_new(sid, "f", {"v": 1}, "fake"))
-    out = _run(connect.run_query(sid, "SELECT 1", 10, 0, "tsv", None))
-    assert out["ok"] and out["output"] == "ran:SELECT 1:db=None"
+    out = _run(connect.run_query(sid, "SELECT 1", 10, 0, None))
+    assert out["ok"]
+    assert out["meta"] == [{"name": "q", "type": "String"}]
+    assert out["data"] == [["ran:SELECT 1:db=None"]]
+
+
+def test_export_csv_routes_to_driver(monkeypatch):
+    monkeypatch.setitem(DRIVERS, "fake", _FakeDriver())
+    sid = "s-fake-csv"
+    _run(connect.connect_new(sid, "f", {"v": 1}, "fake"))
+    out = _run(connect.export_csv(sid, "SELECT 1", 10, 0, None))
+    assert out["ok"] and out["output"] == "q\nran:SELECT 1:db=None"
 
 
 def test_disconnect_clears_session_and_suppresses_reconnect(monkeypatch):
@@ -98,7 +111,7 @@ def test_run_query_requires_database_when_picker_present(monkeypatch):
     monkeypatch.setitem(DRIVERS, "fakedb", _WithDbs())
     sid = "s-fakedb"
     _run(connect.connect_new(sid, "g", {"v": 1}, "fakedb"))
-    out = _run(connect.run_query(sid, "SELECT 1", 10, 0, "tsv", None))
+    out = _run(connect.run_query(sid, "SELECT 1", 10, 0, None))
     assert out["ok"] is False and out["reason"] == "no-database"
 
 

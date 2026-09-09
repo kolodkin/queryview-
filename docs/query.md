@@ -160,31 +160,31 @@ without saving a predefined query.
 
 ## Default views for complex types
 
-Columns whose ClickHouse type is **`Array`**, **`Map`**, or **`Tuple`** get a
-built-in **default view** with no `cell_view` authored: instead of the raw
-serialized string (`['a','b']`, `{'x':1}`, `(1,'a')`) the cell renders a **plain
-vertical list**. When a collection has more than 3 items the cell starts
-**collapsed**, showing the first 3 with a `… (+N more)` expander; expanding
-reveals the rest plus a `▾ collapse` control.
+Cells whose value is a collection — a ClickHouse **`Array`**, **`Map`**, or
+**`Tuple`**, or any JSON array/object another driver returns — get a built-in
+**default view** with no `cell_view` authored: instead of the serialized text
+(`["a","b"]`, `{"x":1}`) the cell renders a **plain vertical list**. When a
+collection has more than 3 items the cell starts **collapsed**, showing the
+first 3 with a `… (+N more)` expander; expanding reveals the rest plus a
+`▾ collapse` control.
 
 - **Array** — one element per line.
 - **Map** — one `key → value` per line.
-- **Tuple** — one `name: value` per line, using the **named-tuple** element names
-  from the type (`Tuple(id Int32, name String)` → `id: 1`); unnamed tuples use
-  the positional index (`0:`, `1:`).
+- **Tuple** — one `name: value` per line for a **named tuple**
+  (`Tuple(id Int32, name String)` → `id: 1`); unnamed tuples use the positional
+  index (`0:`, `1:`).
 - **`Array(Tuple(...))`** — a list of tuples, **one tuple per line**
   (`id: 1, name: a`), so a list of records stays scannable.
 - **`Array(Map(...))`** — a list of maps, **one map per line**
   (`x → 1, y → 2`). The outer array collapses to the first 3 elements.
 - Nesting beyond those two cases (e.g. `Array(Array(...))`, a complex `Tuple`
-  field) renders that nested piece as its **raw serialized substring**.
+  field) renders that nested piece as **JSON text**.
 
-Types come from a `DESCRIBE (<query>)` run **automatically alongside each
-Execute** (cached per query, so paging doesn't re-describe), independent of the
-**Fields** picker. If that describe fails or the type isn't one of the above, the
-cell renders as plain text. An explicit `cell_view` entry for a column **takes
-precedence** over its default view (and is the way to opt out). Default views
-apply to the on-screen table only — **Download CSV** keeps the raw serialized
+Values arrive structured (see [Results & CSV](#results--csv)); the column type
+from the result's own metadata only decides map (`→`) versus tuple (`:`)
+labelling. An explicit `cell_view` entry for a column **takes precedence** over
+its default view (and is the way to opt out). Default views apply to the
+on-screen table only — **Download CSV** keeps the database's own serialized
 value.
 
 ## Query parameters
@@ -246,9 +246,13 @@ and quoted/escaped on substitution, params stay within the existing trust model
 
 ## Results & CSV
 
-Results come back from ClickHouse as `TabSeparatedWithNames` and render as an HTML
-table (first row = column names), scrolling within the panel (wide results scroll
-horizontally). **Download CSV** re-runs the current page as `CSVWithNames` and saves
+Results come back as `{meta: [{name, type}], data: [[…]]}` — ClickHouse's
+`JSONCompact` shape, which the other drivers reproduce from their native rows —
+and render as an HTML table, scrolling within the panel (wide results scroll
+horizontally). Values are JSON as the database emitted them; 64-bit integers and
+decimals are quoted as strings so nothing rounds in the browser, and arrays,
+maps, and tuples arrive as JSON arrays and objects (named tuples as objects).
+**Download CSV** re-runs the current page as `CSVWithNames` and saves
 `query.csv` — current page only, always every column regardless of the **Select
 fields** view.
 
@@ -280,7 +284,7 @@ backplane.
 
 | Method | Path                        | Body                                          | Result |
 | ------ | --------------------------- | --------------------------------------------- | ------ |
-| POST   | `/api/db/query`     | `{query, limit?, offset?, format?, order_by?}` | `{ok, output}` (raw text) \| `{ok:false, message}`. `format:"csv"` returns CSV. `order_by` is `[{name, dir}]` (`dir` ASC/DESC). Empty query → `400`; no session → `409`. |
+| POST   | `/api/db/query`     | `{query, limit?, offset?, format?, order_by?}` | `{ok, meta:[{name, type}], data:[[…]]}` \| `{ok:false, message}`. `format:"csv"` returns `{ok, output}` (CSV text). `order_by` is `[{name, dir}]` (`dir` ASC/DESC). Empty query → `400`; no session → `409`. |
 | POST   | `/api/db/describe`  | `{query}`                                     | `{ok, fields:[{name, type}]}` — the query's output columns, via `DESCRIBE`, no data scanned. \| `{ok:false, message}`. Empty query → `400`; no session / no database → `409`. |
 | GET    | `/api/predefined-queries`   | `?type=<connType>`                            | `{queries:[{query_name, query, cell_view, order_by, fields}]}` for that connection type. `cell_view` is raw YAML text or `null`; `order_by` is `[{name, dir}]` or `null`; `fields` is `["col", …]` or `null`. |
 | POST   | `/api/predefined-queries`   | `{query_name, type, query, cell_view?, order_by?, fields?}` | `{ok}`; upserts a predefined query. `cell_view` is optional raw YAML; `order_by`/`fields` persist the saved presentation (validated; malformed → `400`). Missing required fields → `400`. |

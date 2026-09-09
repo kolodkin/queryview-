@@ -1,5 +1,5 @@
 """DuckDB-specific behavior against a real temp-file database: the :memory:
-default, the empty (no-picker) database list, paginated+serialized queries,
+default, the empty (no-picker) database list, paginated typed queries, CSV export,
 describe, and error reporting. Registry conformance, config round-trip, and
 validation are covered by test_driver_contract."""
 
@@ -49,7 +49,7 @@ def test_list_tables_names_seeded_table_with_estimates(duck_path):
     assert isinstance(t["bytes"], int) and t["bytes"] > 0
 
 
-def test_run_query_paginates_and_serializes(duck_path):
+def test_run_query_paginates_and_returns_typed_rows(duck_path):
     d = DuckDBDriver()
     r = _run(
         d.run_query(
@@ -59,11 +59,18 @@ def test_run_query_paginates_and_serializes(duck_path):
             2,
             0,
             [{"name": "name", "dir": "ASC"}],
-            "tsv",
         )
     )
-    assert r.ok
-    assert r.value == "id\tname\n1\talpha\n2\tbeta"
+    assert r.ok and r.rows is not None
+    assert [c.name for c in r.rows.meta] == ["id", "name"]
+    assert all(isinstance(c.type, str) and c.type for c in r.rows.meta)
+    assert r.rows.data == [[1, "alpha"], [2, "beta"]]
+
+
+def test_export_csv_returns_csv_with_names(duck_path):
+    d = DuckDBDriver()
+    r = _run(d.export_csv(DuckConfig(duck_path), "SELECT id, name FROM items ORDER BY id", None, 2, 0, None))
+    assert r.ok and r.value == "id,name\n1,alpha\n2,beta"
 
 
 def test_describe_query_returns_columns(duck_path):
@@ -76,5 +83,5 @@ def test_describe_query_returns_columns(duck_path):
 
 def test_run_query_error_is_reported(duck_path):
     d = DuckDBDriver()
-    r = _run(d.run_query(DuckConfig(duck_path), "SELECT * FROM no_such", None, 10, 0, None, "tsv"))
-    assert r.ok is False and "no_such" in r.value
+    r = _run(d.run_query(DuckConfig(duck_path), "SELECT * FROM no_such", None, 10, 0, None))
+    assert r.ok is False and r.rows is None and "no_such" in r.message
