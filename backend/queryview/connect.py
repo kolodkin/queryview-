@@ -422,15 +422,32 @@ async def run_query(
     sql: str,
     limit: int,
     offset: int,
-    fmt: str,
     order_by: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Run a paginated SQL query against this session's selected database. The
-    driver owns pagination/quoting; `fmt` is the logical 'tsv'/'csv'."""
+    """Run a paginated SQL query against this session's selected database and
+    return `{ok, meta: [{name, type}], data: [[…]]}`. The driver owns
+    pagination/quoting."""
     s, err = await _gated_session(sid)
     if s is None:
         return err  # type: ignore[return-value]
-    r = await DRIVERS[s.type].run_query(s.config, sql, s.database, limit, offset, order_by, fmt)
+    r = await DRIVERS[s.type].run_query(s.config, sql, s.database, limit, offset, order_by)
+    if not r.ok or r.rows is None:
+        return {"ok": False, "message": r.message}
+    return {"ok": True, "meta": [c._asdict() for c in r.rows.meta], "data": r.rows.data}
+
+
+async def export_csv(
+    sid: str,
+    sql: str,
+    limit: int,
+    offset: int,
+    order_by: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """The same page as `run_query`, as CSVWithNames text in `output`."""
+    s, err = await _gated_session(sid)
+    if s is None:
+        return err  # type: ignore[return-value]
+    r = await DRIVERS[s.type].export_csv(s.config, sql, s.database, limit, offset, order_by)
     if not r.ok:
         return {"ok": False, "message": r.value}
     return {"ok": True, "output": r.value}

@@ -25,6 +25,7 @@ from .connect import (
     connect_new,
     describe_query,
     disconnect,
+    export_csv,
     get_session,
     list_connection_names,
     list_tables,
@@ -241,13 +242,17 @@ async def db_query(request: Request):
     limit = 100 if limit < 1 else min(limit, 1000)
     offset = _parse_int(b.get("offset"), 0)
     offset = 0 if offset < 0 else offset
-    fmt = "csv" if b.get("format") == "csv" else "tsv"
     raw_order = b.get("order_by")
     order_by = raw_order if isinstance(raw_order, list) else None
-    r = await run_query(request.state.sid, sql, limit, offset, fmt, order_by)
+    if b.get("format") == "csv":
+        r = await export_csv(request.state.sid, sql, limit, offset, order_by)
+        if not r["ok"]:
+            return _gate_error(r, ("no-session",))
+        return {"ok": True, "output": r["output"]}
+    r = await run_query(request.state.sid, sql, limit, offset, order_by)
     if not r["ok"]:
         return _gate_error(r, ("no-session",))
-    return {"ok": True, "output": r["output"]}
+    return {"ok": True, "meta": r["meta"], "data": r["data"]}
 
 
 # Tables of this session's selected database (the Explorer page's sidebar).

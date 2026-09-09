@@ -9,7 +9,7 @@ from typing import Any
 
 import duckdb
 
-from .base import QueryResult, build_order_by, serialize_rows, wrap_paginated
+from .base import Column, QueryResult, QueryRows, TextResult, build_order_by, to_csv, to_json_value, wrap_paginated
 
 
 @dataclass(frozen=True)
@@ -104,6 +104,30 @@ class DuckDBDriver:
         except Exception as e:  # noqa: BLE001
             return False, str(e)
 
+    async def _fetch_page(
+        self,
+        config: DuckConfig,
+        sql: str,
+        database: str | None,
+        limit: int,
+        offset: int,
+        order_by: list[dict[str, Any]] | None,
+    ) -> QueryRows:
+        order_clause = build_order_by(order_by, '"')
+        paginated = wrap_paginated(sql, order_clause, limit, offset, alias="_qv")
+
+        def _work() -> QueryRows:
+            con = _open(config.path)
+            try:
+                # A relation exposes DuckDB's own type names alongside the rows.
+                rel = con.sql(paginated)
+                meta = [Column(name, str(t)) for name, t in zip(rel.columns, rel.types, strict=True)]
+                return QueryRows(meta, [[to_json_value(v) for v in row] for row in rel.fetchall()])
+            finally:
+                con.close()
+
+        return await asyncio.to_thread(_work)
+
     async def run_query(
         self,
         config: DuckConfig,
@@ -112,26 +136,26 @@ class DuckDBDriver:
         limit: int,
         offset: int,
         order_by: list[dict[str, Any]] | None,
-        fmt: str,
     ) -> QueryResult:
-        order_clause = build_order_by(order_by, '"')
-        paginated = wrap_paginated(sql, order_clause, limit, offset, alias="_qv")
-
-        def _work():
-            con = _open(config.path)
-            try:
-                cur = con.execute(paginated)
-                columns = [d[0] for d in cur.description] if cur.description else []
-                rows = cur.fetchall()
-                return columns, rows
-            finally:
-                con.close()
-
         try:
-            columns, rows = await asyncio.to_thread(_work)
-            return QueryResult(True, serialize_rows(columns, rows, fmt))
+            return QueryResult(True, await self._fetch_page(config, sql, database, limit, offset, order_by))
         except Exception as e:  # noqa: BLE001
-            return QueryResult(False, str(e))
+            return QueryResult(False, None, str(e))
+
+    async def export_csv(
+        self,
+        config: DuckConfig,
+        sql: str,
+        database: str | None,
+        limit: int,
+        offset: int,
+        order_by: list[dict[str, Any]] | None,
+    ) -> TextResult:
+        try:
+            rows = await self._fetch_page(config, sql, database, limit, offset, order_by)
+        except Exception as e:  # noqa: BLE001
+            return TextResult(False, str(e))
+        return TextResult(True, to_csv([c.name for c in rows.meta], rows.data))
 
     async def describe_query(
         self, config: DuckConfig, sql: str, database: str | None

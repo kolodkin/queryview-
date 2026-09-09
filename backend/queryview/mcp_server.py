@@ -86,7 +86,9 @@ async def run_query(
     before building a dashboard or a push_query. `limit`/`offset` page the result
     (default 1000 / 0; limit is capped at 10000). Returns
     {"ok": True, "connection": ..., "database": ..., "columns": [...],
-    "rows": [[...], ...]}, or {"ok": False, "message": ...}.
+    "types": [...], "rows": [[...], ...]} — values typed as the driver returns
+    them (64-bit integers and decimals as strings) — or {"ok": False,
+    "message": ...}.
     `database` is the connection's currently-selected database (the user can
     change it from the connection pill), so check it before deciding whether to
     fully-qualify tables as db.table.
@@ -106,6 +108,7 @@ async def run_query(
         "connection": connection,
         "database": stored.database if stored else None,
         **_columns_to_rows(r["results"]["q"]),
+        "types": [c["type"] for c in r["meta"]["q"]],
     }
 
 

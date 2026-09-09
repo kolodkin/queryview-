@@ -10,10 +10,14 @@ from typing import Any
 import asyncpg
 
 from .base import (
+    Column,
     QueryResult,
+    QueryRows,
+    TextResult,
     build_order_by,
     parse_host_port_config,
-    serialize_rows,
+    to_csv,
+    to_json_value,
     wrap_paginated,
 )
 
@@ -133,6 +137,23 @@ class PostgresDriver:
         except Exception as e:  # noqa: BLE001
             return False, str(e) or "connection failed"
 
+    async def _fetch_page(
+        self,
+        config: PgConfig,
+        sql: str,
+        database: str | None,
+        limit: int,
+        offset: int,
+        order_by: list[dict[str, Any]] | None,
+    ) -> QueryRows:
+        order_clause = build_order_by(order_by, '"')
+        paginated = wrap_paginated(sql, order_clause, limit, offset, alias="_qv")
+        async with _connect(config, database) as conn:
+            stmt = await conn.prepare(paginated)
+            meta = [Column(a.name, a.type.name) for a in stmt.get_attributes()]
+            records = await stmt.fetch()
+            return QueryRows(meta, [[to_json_value(v) for v in r] for r in records])
+
     async def run_query(
         self,
         config: PgConfig,
@@ -141,18 +162,26 @@ class PostgresDriver:
         limit: int,
         offset: int,
         order_by: list[dict[str, Any]] | None,
-        fmt: str,
     ) -> QueryResult:
-        order_clause = build_order_by(order_by, '"')
-        paginated = wrap_paginated(sql, order_clause, limit, offset, alias="_qv")
         try:
-            async with _connect(config, database) as conn:
-                stmt = await conn.prepare(paginated)
-                columns = [a.name for a in stmt.get_attributes()]
-                records = await stmt.fetch()
-                return QueryResult(True, serialize_rows(columns, [list(r) for r in records], fmt))
+            return QueryResult(True, await self._fetch_page(config, sql, database, limit, offset, order_by))
         except Exception as e:  # noqa: BLE001
-            return QueryResult(False, str(e) or "connection failed")
+            return QueryResult(False, None, str(e) or "connection failed")
+
+    async def export_csv(
+        self,
+        config: PgConfig,
+        sql: str,
+        database: str | None,
+        limit: int,
+        offset: int,
+        order_by: list[dict[str, Any]] | None,
+    ) -> TextResult:
+        try:
+            rows = await self._fetch_page(config, sql, database, limit, offset, order_by)
+        except Exception as e:  # noqa: BLE001
+            return TextResult(False, str(e) or "connection failed")
+        return TextResult(True, to_csv([c.name for c in rows.meta], rows.data))
 
     async def describe_query(
         self, config: PgConfig, sql: str, database: str | None

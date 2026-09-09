@@ -1,11 +1,19 @@
-"""Driver dialect helpers and the row serializer (the shared output contract)."""
+"""Driver dialect helpers and the shared result contract (JSON-safe rows, CSV)."""
 
 from __future__ import annotations
 
+import datetime as dt
+import uuid
+from decimal import Decimal
+
 from queryview.drivers.base import (
+    Column,
+    QueryRows,
     build_order_by,
+    rows_to_columns,
     select_all_sql,
-    serialize_rows,
+    to_csv,
+    to_json_value,
     wrap_paginated,
 )
 
@@ -35,15 +43,43 @@ def test_wrap_paginated_adds_alias_and_order():
     assert out == 'SELECT * FROM (\nSELECT 1\n) AS _qv ORDER BY "a" ASC LIMIT 10 OFFSET 5'
 
 
-def test_serialize_rows_tsv_with_names_and_nulls():
-    out = serialize_rows(["id", "name"], [[1, "a"], [2, None]], "tsv")
-    assert out == "id\tname\n1\ta\n2\t"
+def test_to_json_value_keeps_json_scalars():
+    assert [to_json_value(v) for v in (None, True, 1, 1.5, "s")] == [None, True, 1, 1.5, "s"]
 
 
-def test_serialize_rows_csv_quotes_and_uses_lf():
-    out = serialize_rows(["a", "b"], [["x,y", "z"]], "csv")
-    assert out == 'a,b\n"x,y",z'
+def test_to_json_value_stringifies_values_json_would_mangle():
+    # Beyond 2^53 a JS number rounds; Decimal has no JSON type; NaN/Inf aren't JSON.
+    assert to_json_value(2**53) == "9007199254740992"
+    assert to_json_value(-(2**53)) == "-9007199254740992"
+    assert to_json_value(2**53 - 1) == 2**53 - 1
+    assert to_json_value(Decimal("1.10")) == "1.10"
+    assert to_json_value(float("nan")) == "nan"
+    assert to_json_value(float("-inf")) == "-inf"
 
 
-def test_serialize_rows_empty_is_just_header():
-    assert serialize_rows(["a"], [], "tsv") == "a"
+def test_to_json_value_formats_temporals_and_ids_as_strings():
+    assert to_json_value(dt.datetime(2024, 1, 2, 3, 4, 5)) == "2024-01-02T03:04:05"
+    assert to_json_value(dt.date(2024, 1, 2)) == "2024-01-02"
+    u = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    assert to_json_value(u) == str(u)
+    assert to_json_value(b"\x00hi") == "\x00hi"
+
+
+def test_to_json_value_recurses_containers():
+    assert to_json_value((1, [Decimal("2"), None], {"k": (3,)})) == [1, ["2", None], {"k": [3]}]
+    assert to_json_value({1: "a"}) == {"1": "a"}
+
+
+def test_to_csv_quotes_and_uses_lf():
+    assert to_csv(["a", "b"], [["x,y", "z"]]) == 'a,b\n"x,y",z'
+
+
+def test_to_csv_nulls_are_empty_fields_and_empty_is_just_header():
+    assert to_csv(["id", "name"], [[1, None]]) == "id,name\n1,"
+    assert to_csv(["a"], []) == "a"
+
+
+def test_rows_to_columns_is_column_oriented_and_ordered():
+    rows = QueryRows([Column("a", "Int32"), Column("b", "String")], [[1, "x"], [2, "y"]])
+    assert rows_to_columns(rows) == {"a": [1, 2], "b": ["x", "y"]}
+    assert rows_to_columns(QueryRows([Column("a", "Int32")], [])) == {"a": []}

@@ -1,16 +1,40 @@
-"""The driver contract (Protocol) plus dialect helpers and the row serializer
-shared by row-returning drivers. No backend/storage concerns here."""
+"""The driver contract (Protocol) plus dialect helpers and the shared result
+contract: typed, JSON-safe rows for the UI and CSV text for download. No
+backend/storage concerns here."""
 
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import io
+import math
+import uuid
+from decimal import Decimal
 from typing import Any, NamedTuple, Protocol, TypeAlias, runtime_checkable
+
+
+class Column(NamedTuple):
+    name: str
+    type: str  # the dialect's own type name (ClickHouse `UInt64`, Postgres `text`, …)
+
+
+class QueryRows(NamedTuple):
+    """A query result in ClickHouse's JSONCompact shape: column metadata plus
+    row-major values that are JSON-safe as-is (see `to_json_value`)."""
+
+    meta: list[Column]
+    data: list[list[Any]]
 
 
 class QueryResult(NamedTuple):
     ok: bool
-    value: str  # serialized rows when ok; an error message otherwise
+    rows: QueryRows | None = None  # set when ok
+    message: str = ""  # set when not ok
+
+
+class TextResult(NamedTuple):
+    ok: bool
+    value: str  # the text when ok; an error message otherwise
 
 
 # A driver's own config object (ChConfig, PgConfig, DuckConfig, …). Opaque to
@@ -56,8 +80,17 @@ class Driver(Protocol):
         limit: int,
         offset: int,
         order_by: list[dict[str, Any]] | None,
-        fmt: str,
     ) -> QueryResult: ...
+    # The same page as run_query, as CSVWithNames text for download.
+    async def export_csv(
+        self,
+        config: DriverConfig,
+        sql: str,
+        database: str | None,
+        limit: int,
+        offset: int,
+        order_by: list[dict[str, Any]] | None,
+    ) -> TextResult: ...
     async def describe_query(
         self,
         config: DriverConfig,
@@ -148,18 +181,53 @@ def wrap_paginated(
     return " ".join(clauses)
 
 
-def serialize_rows(columns: list[str], rows: list[Any], fmt: str) -> str:
-    """Serialize rows to the text contract ClickHouse emits: TabSeparatedWithNames
-    (fmt='tsv') or CSVWithNames (fmt='csv'). None -> empty field. Non-strings are
-    str()-ified. No trailing newline (matches ClickHouse's stripped output)."""
-    if fmt == "csv":
-        buf = io.StringIO()
-        writer = csv.writer(buf, lineterminator="\n")
-        writer.writerow(columns)
-        for row in rows:
-            writer.writerow(["" if v is None else str(v) for v in row])
-        return buf.getvalue().rstrip("\n")
-    lines = ["\t".join(columns)]
+# The largest integer a JS number holds exactly; beyond it values travel as strings.
+_JS_SAFE_INT = 2**53 - 1
+
+
+def to_json_value(v: Any) -> Any:
+    """A JSON-safe value that survives the browser: ints beyond 2^53, Decimals,
+    NaN/Inf, datetimes, UUIDs, and bytes become strings; containers recurse;
+    JSON scalars pass through. Mirrors what ClickHouse's JSONCompact emits
+    with 64-bit integers and decimals quoted, so every driver looks the same."""
+    if v is None or isinstance(v, (bool, str)):
+        return v
+    if isinstance(v, int):
+        return v if -_JS_SAFE_INT <= v <= _JS_SAFE_INT else str(v)
+    if isinstance(v, float):
+        return str(v) if math.isnan(v) or math.isinf(v) else v
+    if isinstance(v, Decimal):
+        return str(v)
+    if isinstance(v, (dt.datetime, dt.date, dt.time)):
+        return v.isoformat()
+    if isinstance(v, uuid.UUID):
+        return str(v)
+    if isinstance(v, (bytes, bytearray)):
+        return bytes(v).decode("utf-8", "replace")
+    if isinstance(v, (list, tuple, set, frozenset)):
+        return [to_json_value(x) for x in v]
+    if isinstance(v, dict):
+        return {str(k): to_json_value(x) for k, x in v.items()}
+    return str(v)
+
+
+def to_csv(columns: list[str], rows: list[Any]) -> str:
+    """CSVWithNames text as ClickHouse emits it: header row, LF line ends, None
+    as an empty field, no trailing newline."""
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(columns)
     for row in rows:
-        lines.append("\t".join("" if v is None else str(v) for v in row))
-    return "\n".join(lines)
+        writer.writerow(["" if v is None else str(v) for v in row])
+    return buf.getvalue().rstrip("\n")
+
+
+def rows_to_columns(rows: QueryRows) -> dict[str, list[Any]]:
+    """Column-oriented, insertion-ordered `{name: [values, …]}` — the dashboard
+    `window.queries` shape."""
+    cols: dict[str, list[Any]] = {c.name: [] for c in rows.meta}
+    names = [c.name for c in rows.meta]
+    for row in rows.data:
+        for i, name in enumerate(names):
+            cols[name].append(row[i] if i < len(row) else None)
+    return cols

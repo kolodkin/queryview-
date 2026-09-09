@@ -9,25 +9,11 @@ from typing import Any
 
 from .connect import _connection_by_name
 from .drivers import DRIVERS
+from .drivers.base import rows_to_columns
 
 # Row cap per dashboard query (matches /api/clickhouse/query's ceiling), applied
 # as the LIMIT of the subselect wrapping each query.
 DASHBOARD_ROW_CAP = 1000
-
-
-def _parse_tsv_columns(text: str) -> dict[str, list[str]]:
-    """Parse TabSeparatedWithNames into a column-oriented, insertion-ordered dict
-    `{column_name: [values, …]}` (first line = names, rest = rows). Empty -> {}."""
-    if text == "":
-        return {}
-    lines = text.split("\n")
-    names = lines[0].split("\t")
-    cols: dict[str, list[str]] = {name: [] for name in names}
-    for line in lines[1:]:
-        values = line.split("\t")
-        for i, name in enumerate(names):
-            cols[name].append(values[i] if i < len(values) else "")
-    return cols
 
 
 async def run_queries_for_connection(
@@ -39,8 +25,9 @@ async def run_queries_for_connection(
     """Run a dashboard's named queries against a saved connection by name.
     Fail-fast: an unknown connection, no selected database, or the first failing
     query aborts the call. On full success returns {"ok": True, "results": {name:
-    {col: [values, …]}}} — column-oriented, ready for window.queries. `limit`/
-    `offset` page each query (default: the dashboard row cap, from row 0)."""
+    {col: [values, …]}}, "meta": {name: [{name, type}, …]}} — column-oriented,
+    ready for window.queries, values typed as the driver returned them.
+    `limit`/`offset` page each query (default: the dashboard row cap, from row 0)."""
     stored = await _connection_by_name(name)
     if stored is None:
         return {
@@ -58,18 +45,12 @@ async def run_queries_for_connection(
                 "or fully-qualify table names as db.table"
             ),
         }
-    results: dict[str, dict[str, list[str]]] = {}
+    results: dict[str, dict[str, list[Any]]] = {}
+    meta: dict[str, list[dict[str, str]]] = {}
     for qname, sql in queries.items():
-        r = await driver.run_query(
-            stored.config,
-            sql,
-            stored.database,
-            limit=limit,
-            offset=offset,
-            order_by=None,
-            fmt="tsv",
-        )
-        if not r.ok:
-            return {"ok": False, "reason": "query", "message": f"{qname}: {r.value}"}
-        results[qname] = _parse_tsv_columns(r.value)
-    return {"ok": True, "results": results}
+        r = await driver.run_query(stored.config, sql, stored.database, limit=limit, offset=offset, order_by=None)
+        if not r.ok or r.rows is None:
+            return {"ok": False, "reason": "query", "message": f"{qname}: {r.message}"}
+        results[qname] = rows_to_columns(r.rows)
+        meta[qname] = [c._asdict() for c in r.rows.meta]
+    return {"ok": True, "results": results, "meta": meta}
